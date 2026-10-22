@@ -44,6 +44,10 @@ button:disabled{opacity:.5;cursor:wait}
 #status.bad{display:block;border:1px solid var(--err);background:#2a1a18}
 .req{color:var(--err)}
 .hidden{display:none}
+input[type=file]{width:100%;margin-top:6px;padding:8px;background:#0f1318;color:var(--mute);border:1px dashed var(--line);border-radius:4px;font:inherit;font-size:16px}
+input[type=file]::file-selector-button{font:700 16px Alegreya,Georgia,serif;margin-right:12px;padding:6px 14px;border-radius:4px;border:1px solid var(--acc);background:var(--acc);color:#0b1210;cursor:pointer}
+#pv{display:block;max-width:240px;max-height:300px;margin:-6px 0 16px;border:1px solid var(--line);border-radius:4px;object-fit:cover}
+@media(min-width:700px){.kits{grid-template-columns:1fr 1fr}}
 </style>
 </head>
 <body>
@@ -56,7 +60,7 @@ button:disabled{opacity:.5;cursor:wait}
 <legend>Игрок</legend>
 <div class="row">
 <label>Ваш ник / имя <span class="req">*</span><input type="text" name="player" required></label>
-<label>Контакт для связи <span class="req">*</span><small> (Discord, Telegram, почта)</small><input type="text" name="contact" required></label>
+<label>Discord юзер <span class="req">*</span><input type="text" name="contact" required placeholder="например: username"></label>
 </div>
 </fieldset>
 
@@ -68,6 +72,9 @@ button:disabled{opacity:.5;cursor:wait}
 <label>Пол<input type="text" name="gender"></label>
 <label>Возраст<input type="text" name="age"></label>
 </div>
+<label>Фотография / арт персонажа <small>(необязательно, jpg, png или webp)</small>
+<input type="file" id="photo" name="photo" accept="image/*"></label>
+<img id="pv" class="hidden" alt="Предпросмотр фото персонажа">
 <label>Внешность<textarea name="look" placeholder="Рост, телосложение, волосы, шрамы, одежда…"></textarea></label>
 <label>Характер<textarea name="character"></textarea></label>
 <label>Предыстория <span class="req">*</span><textarea name="story" required placeholder="Откуда персонаж, чем жил до начала игры"></textarea></label>
@@ -79,18 +86,10 @@ button:disabled{opacity:.5;cursor:wait}
 </fieldset>
 
 <fieldset>
-<legend>Класс и стартовое снаряжение</legend>
-<div class="classes" id="classes"></div>
-<div id="customClass" class="hidden">
-<label>Название вашего класса <span class="req">*</span><input type="text" name="customClass"></label>
-<label>Опишите класс и желаемое снаряжение <span class="req">*</span><textarea name="customGear"></textarea></label>
-</div>
-<div id="kitsBox">
-<p class="hint">Выберите один набор снаряжения:</p>
-<div class="kits" id="kits"></div>
-</div>
-<label>Дополнительно <small>(хотите поменять предметы или класс — напишите здесь, что именно и почему)</small>
-<textarea name="extra"></textarea></label>
+<legend>Класс</legend>
+<label>Какой класс вы хотите? <span class="req">*</span><input type="text" name="clsName" required placeholder="Например: маг, вор, бард, охотник на нечисть…"></label>
+<label>Описание класса <span class="req">*</span><small> (чем занимается, как сражается, какие умения и стартовое снаряжение хотите)</small>
+<textarea name="clsDesc" required style="min-height:160px"></textarea></label>
 </fieldset>
 
 <div class="actions">
@@ -112,59 +111,33 @@ const CONFIG = {
   ADMIN_EMAIL: ""
 };
 
-const CLASSES = {
-  "Воин": {d:"ближний бой", kits:[
-    ["Щитоносец","Меч, деревянный щит, кожаная куртка, фляга, 3 хлебца"],
-    ["Рубака","Двуручный топор, кольчужная безрукавка, точильный камень, 2 хлебца"],
-    ["Копейщик","Копьё, кинжал, стёганый поддоспешник, верёвка 10 м"]]},
-  "Лучник": {d:"дальний бой", kits:[
-    ["Охотник","Короткий лук, 30 стрел, охотничий нож, плащ"],
-    ["Следопыт","Длинный лук, 20 стрел, лёгкий кинжал, набор для костра"],
-    ["Стрелок","Арбалет, 20 болтов, короткий меч, кожаные наручи"]]},
-  "Инженер": {d:"механизмы и ловушки", kits:[
-    ["Механик","Набор инструментов, молоток, 5 гвоздей-ловушек, моток проволоки, защитные очки"],
-    ["Сапёр","Верёвка, 3 дымовые шашки, кинжал, лом, фонарь"],
-    ["Изобретатель","Малая турель-самострел (конструкция), чертежи, набор инструментов"]]},
-  "Священник": {d:"исцеление и поддержка", kits:[
-    ["Целитель","Посох, 5 лечебных трав, бинты, символ веры"],
-    ["Паладин-проповедник","Булава, лёгкий доспех, святая вода (2 флакона), символ веры"],
-    ["Странствующий монах","Посох, молитвенник, зелье лечения (1), походная сумка"]]},
-  "Другое": {d:"свой вариант", kits:[]}
-};
 
 const $ = s => document.querySelector(s);
 const f = $("#f"), st = $("#status");
-let cls = "", kit = "";
+let photo = null;
 
-// отрисовка классов
-$("#classes").innerHTML = Object.entries(CLASSES).map(([n,c]) =>
-  `<label><input type="radio" name="cls" value="${n}"><span><b>${n}</b><em>${c.d}</em></span></label>`).join("");
-
-f.addEventListener("change", e => {
-  if (e.target.name === "cls") {
-    cls = e.target.value; kit = "";
-    const other = cls === "Другое";
-    $("#customClass").classList.toggle("hidden", !other);
-    $("#kitsBox").classList.toggle("hidden", other);
-    $("#kits").innerHTML = CLASSES[cls].kits.map(([t,g],i) =>
-      `<label><input type="radio" name="kit" value="${i}"><span><b>${t}.</b> ${g}</span></label>`).join("");
-  }
-  if (e.target.name === "kit") {
-    const k = CLASSES[cls].kits[+e.target.value]; kit = k[0] + " — " + k[1];
-  }
+$("#photo").addEventListener("change", async e => {
+  const file = e.target.files[0]; photo = null; $("#pv").classList.add("hidden");
+  if (!file) return;
+  if (!file.type.startsWith("image/")) { show("Выберите файл-картинку (jpg, png, webp).", false); e.target.value = ""; return; }
+  try {
+    const img = await new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = URL.createObjectURL(file); });
+    const k = Math.min(1, 1280 / Math.max(img.width, img.height));
+    const c = document.createElement("canvas"); c.width = Math.round(img.width * k); c.height = Math.round(img.height * k);
+    const x = c.getContext("2d"); x.fillStyle = "#fff"; x.fillRect(0, 0, c.width, c.height); x.drawImage(img, 0, 0, c.width, c.height);
+    photo = await new Promise(r => c.toBlob(r, "image/jpeg", .85));
+    $("#pv").src = URL.createObjectURL(photo); $("#pv").classList.remove("hidden");
+  } catch { show("Не удалось прочитать картинку, попробуйте другую.", false); e.target.value = ""; }
 });
 
 function val(n){ return (f.elements[n]?.value || "").trim(); }
 
 function validate(){
   const miss = [];
-  [["player","Ник игрока"],["contact","Контакт"],["name","Имя персонажа"],["race","Раса"],["story","Предыстория"]]
+  [["player","Ник игрока"],["contact","Discord юзер"],["name","Имя персонажа"],["race","Раса"],["story","Предыстория"]]
     .forEach(([n,l]) => { if(!val(n)) miss.push(l); });
-  if (!cls) miss.push("Класс");
-  else if (cls === "Другое") {
-    if(!val("customClass")) miss.push("Название своего класса");
-    if(!val("customGear")) miss.push("Описание своего класса");
-  } else if (!kit) miss.push("Набор снаряжения");
+  if(!val("clsName")) miss.push("Класс");
+  if(!val("clsDesc")) miss.push("Описание класса");
   return miss;
 }
 
@@ -172,14 +145,11 @@ function build(){
   const L = [];
   const add = (t,v) => L.push(`**${t}:** ${v || "—"}`);
   L.push("📜 **НОВАЯ АНКЕТА ПЕРСОНАЖА**", "");
-  add("Игрок", val("player")); add("Контакт", val("contact")); L.push("");
+  add("Игрок", val("player")); add("Discord", val("contact")); L.push("");
   add("Имя", val("name")); add("Раса", val("race")); add("Пол", val("gender")); add("Возраст", val("age"));
   add("Внешность", val("look")); add("Характер", val("character")); add("Предыстория", val("story"));
   add("Цель", val("goal")); add("Сильные стороны", val("pros")); add("Слабости", val("cons")); L.push("");
-  if (cls === "Другое") {
-    add("Класс", "Другое: " + val("customClass")); add("Описание класса и снаряжения", val("customGear"));
-  } else { add("Класс", cls); add("Стартовое снаряжение", kit); }
-  add("Дополнительно", val("extra"));
+  add("Класс", val("clsName")); add("Описание класса", val("clsDesc"));
   return L.join("\n");
 }
 
@@ -209,8 +179,18 @@ f.addEventListener("submit", async e => {
   btn.disabled = true; btn.textContent = "Отправка…";
   try {
     if (CONFIG.DISCORD_WEBHOOK) {
-      for (const part of chunks(text)) {
-        const r = await fetch(CONFIG.DISCORD_WEBHOOK, {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({content:part})});
+      const parts = chunks(text);
+      for (let i = 0; i < parts.length; i++) {
+        let opts;
+        if (i === 0 && photo) {
+          const fd = new FormData();
+          fd.append("payload_json", JSON.stringify({content: parts[0]}));
+          fd.append("files[0]", photo, "character.jpg");
+          opts = {method:"POST", body:fd};
+        } else {
+          opts = {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({content:parts[i]})};
+        }
+        const r = await fetch(CONFIG.DISCORD_WEBHOOK, opts);
         if (!r.ok) throw new Error("Discord: " + r.status);
       }
     } else if (CONFIG.FORM_ENDPOINT) {
@@ -226,10 +206,10 @@ f.addEventListener("submit", async e => {
       throw new Error("Отправка не настроена администратором.");
     }
     show("Анкета отправлена администратору. Спасибо!", true);
-    f.reset(); cls = kit = ""; $("#kits").innerHTML = ""; $("#customClass").classList.add("hidden"); $("#kitsBox").classList.remove("hidden");
+    f.reset(); photo = null; $("#pv").classList.add("hidden");
   } catch (err) {
     const ok = await copyText(text);
-    show("Не удалось отправить (" + err.message + ").\n" + (ok ? "Текст анкеты скопирован — перешлите его администратору лично." : "Нажмите «Скопировать текст» и перешлите администратору."), false);
+    show("Не удалось отправить (" + err.message + ").\n" + (photo ? "Фото придётся отправить администратору отдельно.\n" : "") + (ok ? "Текст анкеты скопирован — перешлите его администратору лично." : "Нажмите «Скопировать текст» и перешлите администратору."), false);
   } finally { btn.disabled = false; btn.textContent = "Отправить анкету"; }
 });
 </script>
